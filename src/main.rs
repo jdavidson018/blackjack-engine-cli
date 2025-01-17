@@ -39,31 +39,44 @@ fn game_loop(mut game: Game) {
     game.shuffle_shoe();
     loop {
         match game.get_state() {
-            GameState::WaitingToDeal => {
+            GameState::WaitingForBet => {
+                println!("Place your bet");
+                game.accept_user_bet(accept_user_bet());
+            }
+            GameState::WaitingToDeal {player_bet, player_bankroll} => {
+                println!("You Bet ${}", player_bet);
                 println!("Dealing Cards");
+                println!("Bankroll: ${}", player_bankroll);
                 game.deal_initial_cards()
             }
-            GameState::WaitingForPlayer { dealer_up_card, player_hand } => {
+            GameState::WaitingForPlayer { dealer_up_card, player_hand, player_bankroll } => {
                 println!("\x1B[2J\x1B[1;1H");
+                println!("Player Bankroll: ${}", player_bankroll);
+                println!("");
                 println!("Player's Turn");
                 println!("Dealer Showing {}", dealer_up_card.to_string());
                 println!("Player Hand {}", player_hand.to_string());
+                println!("Player Bet ${}", player_hand.bet);
                 let next_move = accept_user_input();
                 game.process_player_action(next_move);
             }
-            GameState::DealerTurn { dealer_hand, player_hand} => {
+            GameState::DealerTurn { dealer_hand, player_hand, player_bankroll} => {
                 println!("\x1B[2J\x1B[1;1H");
+                println!("Player Bankroll: ${}", player_bankroll);
                 println!("Dealer's Turn");
                 println!("Dealer Showing {}", dealer_hand.to_string());
                 println!("Player Hand {}", player_hand.to_string());
+                println!("Player Bet ${}", player_hand.bet);
                 sleep(Duration::from_millis(500));
                 game.next_dealer_turn();
             }
-            GameState::RoundComplete { dealer_hand, player_hand, outcome } => {
+            GameState::RoundComplete { dealer_hand, player_hand, outcome, player_bankroll } => {
                 println!("\x1B[2J\x1B[1;1H");
+                println!("Player Bankroll: ${}", player_bankroll);
                 println!("End of Round");
                 println!("Dealer Showing {}", dealer_hand.to_string());
                 println!("Player Hand {}", player_hand.to_string());
+                println!("Player Bet ${}", player_hand.bet);
                 match outcome {
                     RoundOutcome::PlayerWin => {println!("Player Wins")}
                     RoundOutcome::DealerWin => {println!("Dealer Wins")}
@@ -77,6 +90,21 @@ fn game_loop(mut game: Game) {
                 }
             }
             _ => {}
+        }
+    }
+}
+
+fn accept_user_bet() -> f64 {
+    loop {
+        let mut user_input = String::new();
+        io::stdin()
+            .read_line(&mut user_input)
+            .expect("Failed to read user input");
+
+        // Parse the input, trim whitespace and newlines first
+        match user_input.trim().parse::<f64>() {
+            Ok(bet) => return bet,
+            Err(_) => println!("Please enter a valid positive number")
         }
     }
 }
