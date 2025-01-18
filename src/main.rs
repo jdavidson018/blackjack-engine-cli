@@ -4,6 +4,7 @@ use std::time::Duration;
 use clap::Parser;
 use blackjack_engine::game::{Game, GameAction, GameState, RoundOutcome};
 use blackjack_engine::game_settings::GameSettings;
+use blackjack_engine::hand::Hand;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -12,24 +13,21 @@ struct Args {
     #[arg(short = 'n', long = "name")]
     player_name: String,
 
-    // Number of times to greet
+    // Number of decks in the shoe
     #[arg(short, long, default_value_t = 1)]
     deck_count: u8,
-
-    // Number of Non-Dealer Players
-    #[arg(short, long, default_value_t = 1)]
-    player_count: u8,
 }
+
 fn main() {
     let args = Args::parse();
 
     println!("Welcome to Blackjack, {}!", args.player_name);
     println!(
-        "Starting a game with {} players and {} decks",
-        args.player_count, args.deck_count
+        "Starting a game with {} decks",
+        args.deck_count
     );
 
-    let settings = GameSettings::new(args.player_name, args.deck_count, args.player_count);
+    let settings = GameSettings::new(args.player_name, args.deck_count);
     let game = Game::new(settings);
 
     game_loop(game);
@@ -43,55 +41,60 @@ fn game_loop(mut game: Game) {
                 println!("Place your bet");
                 game.accept_user_bet(accept_user_bet());
             }
-            GameState::WaitingToDeal {player_bet, player_bankroll} => {
-                println!("You Bet ${}", player_bet);
-                println!("Dealing Cards");
-                println!("Bankroll: ${}", player_bankroll);
+            GameState::WaitingToDeal { player_bet, player_bankroll } => {
+                print_game_state(Some(player_bankroll), Some(player_bet), None, None);
                 game.deal_initial_cards()
             }
-            GameState::WaitingForPlayer { dealer_up_card, player_hand, player_bankroll } => {
-                println!("\x1B[2J\x1B[1;1H");
-                println!("Player Bankroll: ${}", player_bankroll);
-                println!("");
-                println!("Player's Turn");
-                println!("Dealer Showing {}", dealer_up_card.to_string());
-                println!("Player Hand {}", player_hand.to_string());
-                println!("Player Bet ${}", player_hand.bet);
+            GameState::WaitingForPlayer { dealer_hand, player_hand, player_bankroll } => {
+                print_game_state(Some(player_bankroll),
+                                 Some(&player_hand.bet),
+                                 Some(&Hand::with_card(dealer_hand.cards[0].clone())),
+                                 Some(player_hand));
                 let next_move = accept_user_input();
                 game.process_player_action(next_move);
             }
-            GameState::DealerTurn { dealer_hand, player_hand, player_bankroll} => {
-                println!("\x1B[2J\x1B[1;1H");
-                println!("Player Bankroll: ${}", player_bankroll);
-                println!("Dealer's Turn");
-                println!("Dealer Showing {}", dealer_hand.to_string());
-                println!("Player Hand {}", player_hand.to_string());
-                println!("Player Bet ${}", player_hand.bet);
+            GameState::DealerTurn { dealer_hand, player_hand, player_bankroll } => {
+                print_game_state(Some(player_bankroll),
+                                 Some(&player_hand.bet),
+                                 Some(dealer_hand),
+                                 Some(player_hand));
                 sleep(Duration::from_millis(500));
                 game.next_dealer_turn();
             }
             GameState::RoundComplete { dealer_hand, player_hand, outcome, player_bankroll } => {
-                println!("\x1B[2J\x1B[1;1H");
-                println!("Player Bankroll: ${}", player_bankroll);
-                println!("End of Round");
-                println!("Dealer Showing {}", dealer_hand.to_string());
-                println!("Player Hand {}", player_hand.to_string());
-                println!("Player Bet ${}", player_hand.bet);
+                print_game_state(Some(player_bankroll),
+                                 Some(&player_hand.bet),
+                                 Some(dealer_hand),
+                                 Some(player_hand));
                 match outcome {
-                    RoundOutcome::PlayerWin => {println!("Player Wins")}
-                    RoundOutcome::DealerWin => {println!("Dealer Wins")}
-                    RoundOutcome::Push => {println!("Push")}
+                    RoundOutcome::PlayerWin => { println!("Player Wins") }
+                    RoundOutcome::DealerWin => { println!("Dealer Wins") }
+                    RoundOutcome::Push => { println!("Push") }
                 }
                 let another = ask_to_continue();
                 if another {
                     game.next_round();
                 } else {
-                    break
+                    break;
                 }
             }
             _ => {}
         }
     }
+}
+
+fn print_game_state(player_bankroll: Option<&f64>,
+                    player_bet: Option<&f64>,
+                    dealer_hand: Option<&Hand>,
+                    player_hand: Option<&Hand>
+) {
+    println!("\x1B[2J\x1B[1;1H");
+    println!("bank: ${}, bet: ${}",
+             player_bankroll.unwrap_or(&0.0),
+             player_bet.unwrap_or(&0.0));
+    println!("Dealer: {}", dealer_hand.map_or("No cards".to_string(), |h| h.to_string()));
+    println!();
+    println!("Player: {}", player_hand.map_or("No cards".to_string(), |h| h.to_string()));
 }
 
 fn accept_user_bet() -> f64 {
@@ -111,7 +114,7 @@ fn accept_user_bet() -> f64 {
 
 fn accept_user_input() -> GameAction {
     println!("Enter your move: (H)it, (S)tand");
-    loop{
+    loop {
         let mut user_input = String::new();
         io::stdin()
             .read_line(&mut user_input)
@@ -120,7 +123,7 @@ fn accept_user_input() -> GameAction {
         match GameAction::from_string(&user_input) {
             Some(next_move) => {
                 return next_move;
-            },
+            }
             None => {
                 println!("Invalid Move, try again");
             }
