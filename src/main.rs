@@ -68,7 +68,6 @@ fn game_loop(mut game: Game) {
                                  Some(dealer_hand),
                                  Some(player_hands),
                                  None);
-                println!("Someone Won");
 
                 let another = ask_to_continue();
                 if another {
