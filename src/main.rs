@@ -2,7 +2,7 @@ use std::io;
 use std::thread::sleep;
 use std::time::Duration;
 use clap::Parser;
-use blackjack_engine::game::{Game, GameAction, GameState, RoundOutcome};
+use blackjack_engine::game::{Game, GameAction, GameState};
 use blackjack_engine::game_settings::GameSettings;
 use blackjack_engine::hand::Hand;
 
@@ -37,40 +37,39 @@ fn game_loop(mut game: Game) {
     game.shuffle_shoe();
     loop {
         match game.get_state() {
-            GameState::WaitingForBet => {
+            GameState::WaitingForBet { player_bankroll } => {
+                println!("\x1B[2J\x1B[1;1H");
+                println!("Bankroll: ${}", player_bankroll);
                 println!("Place your bet");
                 game.accept_user_bet(accept_user_bet());
             }
             GameState::WaitingToDeal { player_bet, player_bankroll } => {
-                print_game_state(Some(player_bankroll), Some(player_bet), None, None);
+                print_game_state(Some(player_bankroll), None, None, None);
                 game.deal_initial_cards()
             }
-            GameState::WaitingForPlayer { dealer_hand, player_hand, player_bankroll } => {
+            GameState::PlayerTurn { dealer_hand, player_hands, player_bankroll, active_hand_index } => {
                 print_game_state(Some(player_bankroll),
-                                 Some(&player_hand.bet),
                                  Some(&Hand::with_card(dealer_hand.cards[0].clone())),
-                                 Some(player_hand));
+                                 Some(player_hands),
+                                 Option::from(*active_hand_index));
                 let next_move = accept_user_input();
-                game.process_player_action(next_move);
+                game.process_player_action(next_move, *active_hand_index);
             }
-            GameState::DealerTurn { dealer_hand, player_hand, player_bankroll } => {
+            GameState::DealerTurn { dealer_hand, player_hands, player_bankroll } => {
                 print_game_state(Some(player_bankroll),
-                                 Some(&player_hand.bet),
                                  Some(dealer_hand),
-                                 Some(player_hand));
+                                 Some(player_hands),
+                                 None);
                 sleep(Duration::from_millis(500));
                 game.next_dealer_turn();
             }
-            GameState::RoundComplete { dealer_hand, player_hand, outcome, player_bankroll } => {
+            GameState::RoundComplete { dealer_hand, player_hands, player_bankroll } => {
                 print_game_state(Some(player_bankroll),
-                                 Some(&player_hand.bet),
                                  Some(dealer_hand),
-                                 Some(player_hand));
-                match outcome {
-                    RoundOutcome::PlayerWin => { println!("Player Wins") }
-                    RoundOutcome::DealerWin => { println!("Dealer Wins") }
-                    RoundOutcome::Push => { println!("Push") }
-                }
+                                 Some(player_hands),
+                                 None);
+                println!("Someone Won");
+
                 let another = ask_to_continue();
                 if another {
                     game.next_round();
@@ -84,17 +83,64 @@ fn game_loop(mut game: Game) {
 }
 
 fn print_game_state(player_bankroll: Option<&f64>,
-                    player_bet: Option<&f64>,
                     dealer_hand: Option<&Hand>,
-                    player_hand: Option<&Hand>
+                    player_hands: Option<&Vec<Hand>>,
+                    active_hand_index: Option<usize>
 ) {
     println!("\x1B[2J\x1B[1;1H");
-    println!("bank: ${}, bet: ${}",
-             player_bankroll.unwrap_or(&0.0),
-             player_bet.unwrap_or(&0.0));
-    println!("Dealer: {}", dealer_hand.map_or("No cards".to_string(), |h| h.to_string()));
+
+    println!("bankroll: ${}",
+             player_bankroll.unwrap_or(&0.0));
     println!();
-    println!("Player: {}", player_hand.map_or("No cards".to_string(), |h| h.to_string()));
+
+    println!("Dealer Cards:");
+    println!("{}", dealer_hand.map_or("No cards".to_string(), |h| h.to_string()));
+    println!();
+
+    println!("Player:");
+    match player_hands {
+        Some(hands) => {
+            if hands.is_empty() {
+                println!("No cards");
+            } else {
+                // Print each hand on a new line with appropriate indexing
+                for (i, hand) in hands.iter().enumerate() {
+                    println!("Hand {}:", i+1);
+                    println!("Bet ${}", hand.bet);
+                    match &hand.outcome {
+                        Some(outcome) => {
+                            match active_hand_index {
+                                Some(index) => {
+                                    if i == index {
+                                        println!("Cards {} - {} <", hand.to_string(), outcome.to_string())
+                                    } else {
+                                        println!("Cards {} - {}", hand.to_string(), outcome.to_string())
+                                    }
+                                },
+                                None => println!("Cards {} - {}", hand.to_string(), outcome.to_string())
+                            }
+                        },
+                        None => {
+                            match active_hand_index {
+                                Some(index) => {
+                                    if i == index {
+                                        println!("Cards {} <", hand.to_string())
+                                    } else {
+                                        println!("Cards {}", hand.to_string())
+                                    }
+                                },
+                                None => {
+                                    println!("Cards {}", hand.to_string())
+                                }
+                            }
+                        },
+                    }
+                    println!();
+                }
+            }
+        }
+        None => println!("No cards"),
+    }
 }
 
 fn accept_user_bet() -> f64 {
@@ -113,7 +159,7 @@ fn accept_user_bet() -> f64 {
 }
 
 fn accept_user_input() -> GameAction {
-    println!("Enter your move: (H)it, (S)tand");
+    println!("Enter your move: (H)it, (S)tand, (D)ouble, S(P)lit");
     loop {
         let mut user_input = String::new();
         io::stdin()
@@ -148,4 +194,9 @@ fn ask_to_continue() -> bool {
             }
         }
     }
+}
+
+enum Turn {
+    DealerTurn,
+    PLayerTurn(i32)
 }
